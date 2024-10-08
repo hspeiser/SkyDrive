@@ -1,0 +1,11 @@
+{
+    "motor_power": 4000,
+    "gear_ratio": 1,
+    "vacuum_strength": 2666,
+    "payload_weight": 0.75,
+    "coefficient_of_drag": 0.75,
+    "payload_cross_section_area": 0.00114,
+    "arm_material": "Carbon Fiber",
+    "arm_length": 1,
+    "arm_cross_section_radius": 0.005
+}
