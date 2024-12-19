@@ -1,121 +1,147 @@
 import math
-import numpy as np
 import matplotlib.pyplot as plt
-import json
 
-# Define material properties
-materials = {
-    'Aluminum': {'density': 2700, 'UTS': 300e6},
-    'Steel': {'density': 7850, 'UTS': 400e6},
-    'Titanium': {'density': 4500, 'UTS': 900e6},
-    'Carbon Fiber': {'density': 1600, 'UTS': 600e6}
-}
+# ---------------------------------------------------------------------------------
+# This script simulates spinning a 2-meter long arm with the motor at its center, and a mass of 
+# 0.5 kg (the rocket) on one end at radius = 1 m, and a 0.5 kg counterweight on the opposite end (also at 1 m).
+#
+# The goal:
+# 1. Achieve a tip speed of Mach 0.5 (≈171 m/s) at a radius of 1 m.
+# 2. Calculate the required RPM and angular velocity for that tip speed.
+# 3. Estimate motor power requirements to spin up to that speed within 5 minutes (300 seconds), 
+#    assuming direct drive and ignoring aerodynamic drag for simplicity.
+# 4. Model the rocket's vertical ascent after release at 171 m/s (vertical), with a Cd = 0.7 
+#    and plot how high it goes.
+#
+# Changes from previous scenario:
+# - The arm is 2 meters total: 1 meter radius on each side of the motor.
+# - Mass distribution:
+#   * Rocket mass = 0.5 kg at 1 m radius on one side.
+#   * Counterweight = 0.5 kg at 1 m radius on opposite side.
+# - Thus total mass at radius = 1m is now 1.0 kg (0.5 kg rocket on one side, 0.5 kg counterweight on other).
+#
+# Assumptions and constants:
+# - Air density: ρ = 1.225 kg/m^3
+# - Gravity: g = 9.81 m/s²
+# - Time to spin up: 300 s
+# - Desired tip speed: 171 m/s
+# - Radius: 1.0 m from center to mass
+# - Cd of rocket = 0.7
+# - Rocket reference area A = 0.01 m² (assumed)
+#
+# Steps:
+# 1. Compute angular velocity (ω) and RPM needed for tip speed.
+# 2. Compute moment of inertia with the masses on both ends and find required torque and power.
+# 3. Simulate vertical ascent of rocket after release at 171 m/s, include drag and find max altitude.
+# 4. Plot altitude over time.
+#
+# We'll print extensive logging and add comments throughout.
+# ---------------------------------------------------------------------------------
 
-def read_input_from_json(file_path):
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    return data
+# ---------------------------------
+# Known constants and parameters
+# ---------------------------------
+g = 9.81               # gravitational acceleration (m/s^2)
+rho = 1.225            # air density (kg/m^3)
+rocket_mass = 0.5      # rocket mass (kg)
+counter_mass = 0.5     # counterweight mass (kg)
+Cd_rocket = 0.7        # Coefficient of drag for rocket
+A_rocket = 0.01        # Assumed reference area (m^2)
+desired_tip_speed = 400 # m/s
+radius = 1.0            # meter (radius of the arm from center to mass)
+spin_up_time = 300.0    # 5 minutes to reach target speed
 
-def main():
-    # Read inputs from JSON file
-    input_file = 'spinlaunch_input.json'  # Change this to your JSON file path
-    inputs = read_input_from_json(input_file)
+# ---------------------------------
+# 1. Compute required RPM for tip speed
+# ---------------------------------
+omega_final = desired_tip_speed / radius   # rad/s
+rpm_final = (omega_final / (2*math.pi)) * 60
 
-    # Extract inputs
-    P_motor = inputs['motor_power']           # Motor power in watts
-    GR = inputs['gear_ratio']                 # Gear ratio (dimensionless)
-    P_vacuum = inputs['vacuum_strength']      # Vacuum strength in Pascals
-    m_payload = inputs['payload_weight']      # Payload weight in kilograms
-    Cd = inputs['coefficient_of_drag']        # Coefficient of drag of the payload
-    A_p = inputs['payload_cross_section_area']# Payload cross-sectional area in square meters
-    material_name = inputs['arm_material']    # Arm material name
-    R = inputs['arm_length']                  # Arm length (radius) in meters
-    r_arm = inputs['arm_cross_section_radius']# Arm cross-sectional radius in meters
+print("--------------------------------------------------")
+print("COMPUTATION OF REQUIRED RPM:")
+print(f"Desired tip speed: {desired_tip_speed} m/s")
+print(f"Radius: {radius} m")
+print(f"Angular velocity (omega_final): {omega_final:.3f} rad/s")
+print(f"Required RPM: {rpm_final:.3f} RPM")
 
-    # Material properties
-    if material_name not in materials:
-        raise ValueError(f"Material '{material_name}' not recognized. Available materials: {list(materials.keys())}")
-    material = materials[material_name]
-    rho_material = material['density']
-    UTS_material = material['UTS']
+# ---------------------------------
+# 2. Compute torque and power needed (ignoring drag)
+# ---------------------------------
+# Moment of inertia: For two equal masses, each at radius = 1 m:
+# I = m*r² + m*r² = (0.5 kg)*(1 m²) + (0.5 kg)*(1 m²) = 1.0 kg*m² total
+#
+# Rod mass is negligible compared to these masses, so we ignore rod mass.
+I = (rocket_mass * radius**2) + (counter_mass * radius**2)
 
-    # Compute arm mass
-    A_arm = math.pi * r_arm**2  # Cross-sectional area of the arm
-    L_arm = R                   # Length of the arm
-    m_arm = rho_material * A_arm * L_arm
+print("--------------------------------------------------")
+print("MOMENT OF INERTIA CALCULATION:")
+print(f"Rocket mass: {rocket_mass:.3f} kg at {radius} m")
+print(f"Counterweight mass: {counter_mass:.3f} kg at {radius} m")
+print(f"Total I: {I:.6f} kg*m^2")
 
-    # Compute moment of inertia
-    I_arm = (1/3) * m_arm * R**2
-    I_payload = m_payload * R**2
-    I_total = I_arm + I_payload
+# Angular acceleration needed:
+alpha = omega_final / spin_up_time  # rad/s²
 
-    # Compute maximum angular velocity (ω_max) based on material strength
-    omega_max = math.sqrt((UTS_material * A_arm) / (R * (m_payload + 0.5 * m_arm)))
+# Torque needed (no drag):
+tau = I * alpha
 
-    # Convert omega_max to RPM
-    omega_max_rpm = omega_max * (60 / (2 * math.pi))
+# Power at final speed (no drag):
+power_final = tau * omega_final
 
-    # Compute time to reach ω_max based on motor power
-    t_max = (I_total * omega_max**2) / (2 * P_motor)
+print("--------------------------------------------------")
+print("TORQUE AND POWER REQUIREMENTS (NO DRAG):")
+print(f"Spin-up time: {spin_up_time} s")
+print(f"Angular acceleration (alpha): {alpha:.6f} rad/s^2")
+print(f"Torque (tau) required (no drag): {tau:.6f} N*m")
+print(f"Power at final speed (no drag): {power_final:.6f} Watts")
 
-    # Compute exit velocity
-    v_exit = omega_max * R
+# ---------------------------------
+# 3. Simulate the rocket ascent after release:
+# ---------------------------------
+# The rocket is released vertically upwards at 171 m/s.
+# We model vertical motion under gravity and drag:
+#
+# dv/dt = -g - (D/m), D = 0.5 * rho * Cd_rocket * A_rocket * v²
+#
+# We'll integrate until v <= 0 (rocket stops ascending).
 
-    # Simulate projectile motion with air drag after release
-    g = 9.81        # Acceleration due to gravity (m/s^2)
-    rho_air = 1.225 # Air density at sea level (kg/m^3)
+time_step = 0.01  # small time step for simulation
+v = desired_tip_speed
+h = 0.0
+time_vals = []
+height_vals = []
+velocity_vals = []
 
-    # Initial conditions
-    v = v_exit
-    h = 0
-    t = 0
-    dt = 0.01  # Time step (seconds)
+t = 0.0
+while v > 0: 
+    # Calculate drag (always opposes velocity)
+    D = 0.5 * rho * Cd_rocket * A_rocket * v**2
+    a = -g - (D / rocket_mass)
+    v = v + a*time_step
+    h = h + v*time_step
+    time_vals.append(t)
+    height_vals.append(h)
+    velocity_vals.append(v)
+    t += time_step
 
-    # Lists to store trajectory data
-    t_list = [t]
-    h_list = [h]
-    v_list = [v]
+max_height = max(height_vals)
 
-    print("\nCalculating trajectory...")
+print("--------------------------------------------------")
+print("ROCKET TRAJECTORY AFTER RELEASE:")
+print(f"Max height reached by rocket: {max_height:.3f} m")
+print("Check the generated plot for altitude vs. time.")
 
-    # Simulate ascent until the payload starts descending
-    while v > 0:
-        # Air drag force
-        F_drag = 0.5 * rho_air * v**2 * A_p * Cd
+# ---------------------------------
+# 4. Plot the rocket trajectory
+# ---------------------------------
+plt.figure(figsize=(10,6))
+plt.plot(time_vals, height_vals, label='Rocket Altitude')
+plt.title("Rocket Altitude Over Time After Release")
+plt.xlabel("Time (s)")
+plt.ylabel("Altitude (m)")
+plt.grid(True)
+plt.legend()
+plt.show()
 
-        # Net acceleration
-        a = -g - (F_drag / m_payload)
-
-        # Update velocity and position
-        v += a * dt
-        h += v * dt
-
-        # Update time
-        t += dt
-
-        # Store data
-        t_list.append(t)
-        h_list.append(h)
-        v_list.append(v)
-
-    # Maximum height reached
-    h_max = max(h_list)
-
-    # Output results
-    print("\n=== Simulation Results ===")
-    print(f"Maximum speed inside (RPM): {omega_max_rpm:.2f} RPM")
-    print(f"Exit velocity: {v_exit:.2f} m/s")
-    print(f"Time to reach maximum speed: {t_max:.2f} seconds")
-    print(f"Maximum height reached: {h_max:.2f} meters")
-
-    # Plot trajectory
-    plt.figure(figsize=(10, 6))
-    plt.plot(t_list, h_list)
-    plt.title('Payload Trajectory After Release')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Height (m)')
-    plt.grid(True)
-    plt.show()
-
-if __name__ == "__main__":
-    main()
+# Done.
+# ---------------------------------------------------------------------------------
