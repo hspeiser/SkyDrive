@@ -3,57 +3,9 @@ import matplotlib.pyplot as plt
 
 # ---------------------------------------------------------------------------------
 # This script simulates spinning a 2-meter long rod with the motor at its center.
-# The setup:
-# - A 2 meter rod (1 meter radius on each side).
-# - At one end (radius = 1 m), there is a 0.5 kg rocket.
-# - At the other end (radius = 1 m), there is a 0.5 kg counterweight.
-# - The rod itself weighs 0.944 kg (assume uniform).
-#
-# Goal:
-# 1. Achieve a tip speed of Mach 0.5 (~171 m/s) at a radius of 1 m.
-# 2. Consider the aerodynamic drag of the rod itself (Cd = 0.1), 
-#    and include the torque required to overcome this drag.
-#    We'll assume a certain rod diameter to calculate frontal area. Since not specified,
-#    we must assume something reasonable. Let's assume a cylindrical rod of diameter 0.02 m.
-#
-# 3. Estimate the total torque and power needed by the motor to both accelerate the system to 
-#    the final speed in under 5 minutes (300 s) AND overcome rod aerodynamic drag at the final speed.
-#
-# 4. Once released at 171 m/s vertically, simulate the rocket ascent under gravity and drag (Cd=0.7)
-#    and plot how high it goes.
-#
-# Assumptions and approach:
-# - Air density: ρ = 1.225 kg/m^3
-# - Gravity: g = 9.81 m/s²
-# - Spin-up time: 300 s
-# - Desired tip speed = 171 m/s
-# - Radius = 1 m
-#
-# Moment of Inertia:
-# - Masses at the ends: rocket (0.5 kg) and counterweight (0.5 kg) both at 1 m radius.
-#   I_masses = (0.5 * 1²) + (0.5 * 1²) = 1.0 kg*m²
-#
-# - Rod mass distribution:
-#   The rod is 2 m long, mass = 0.944 kg, uniform. Moment of inertia about center:
-#   I_rod = (1/12)*M*L² = (1/12)*0.944*(2²) = (1/12)*0.944*4 = (0.944*4)/12 = 3.776/12 = 0.314666... kg*m²
-#
-# Total I = I_masses + I_rod
-#
-# Aerodynamic drag on rod:
-# - Assume rod is perpendicular to the direction of motion at all points (since it's spinning).
-# - We'll integrate drag along the rod length. Each small segment at radius r sees 
-#   v(r) = ω * r, and drag force dF = 0.5 * ρ * Cd_rod * A_segment * v(r)².
-# - A_segment = rod_diameter * segment_length
-# - Then torque contribution from that segment dτ = r * dF.
-#
-# We do a numeric integration along half the rod (0 to 1 m) and double it (since symmetrical).
-#
-# Finally, we find the torque required to maintain final angular velocity against drag (at final speed).
-# The motor must provide at least this torque continuously at final speed, plus the torque to accelerate 
-# up to that speed within 5 minutes.
-#
-# We'll print out all details and plot rocket trajectory.
-#
+# Then it calculates the total energy (and thus average power) consumed during spin-up
+# by numerically integrating torque*omega over time.
+# Finally, it simulates the rocket's vertical launch after release and plots the trajectory.
 # ---------------------------------------------------------------------------------
 
 # ---------------------------------
@@ -68,12 +20,13 @@ rod_mass = 0.944       # kg
 Cd_rod = 0.1           # rod drag coefficient
 rod_length = 2.0       # meters total
 radius = 1.0           # meters on each side from center
-rod_diameter = 0.02    # assumed rod diameter in meters for frontal area calc
+rod_diameter = 0.02    # assumed rod diameter in meters
 
 Cd_rocket = 0.7
-A_rocket = 0.01         # assumed rocket frontal area (m²)
-desired_tip_speed = 200 # m/s at radius 1m
-spin_up_time = 300.0     # s (5 minutes)
+A_rocket = 0.01        # assumed rocket frontal area (m^2)
+
+desired_tip_speed = 171.0  # m/s at radius 1m
+spin_up_time = 300.0       # seconds (5 minutes)
 
 # ---------------------------------
 # 1. Compute required angular velocity and RPM
@@ -106,25 +59,27 @@ print(f"I_rod = {I_rod:.6f} kg*m^2")
 print(f"Total I = {I_total:.6f} kg*m^2")
 
 # ---------------------------------
-# 3. Rod Aerodynamic Drag Torque at final speed
+# 3. Aerodynamic Drag Torque on the Rod
+#    (We'll use a function so we can evaluate at any omega)
 # ---------------------------------
-# We integrate along half the rod from 0 to 1m, then double.
-# dτ = r * dF, dF = 0.5 * rho * Cd_rod * A_segment * (omega_final*r)^2
-# A_segment = rod_diameter * segment_length
-# We'll use numerical integration with N segments:
 N = 100
 dr = radius / N
-A_segment = rod_diameter * dr
+A_segment = rod_diameter * dr  # frontal area for each small segment along rod
 
 def rod_drag_torque(omega):
+    """
+    Numerically integrate rod drag from r=0 to r=1, then double it.
+    dτ = r * dF,  where dF = 0.5 * rho * Cd_rod * A_segment * (v^2)
+    and v = omega*r for that segment.
+    """
     torque_half = 0.0
     for i in range(N):
-        r_mid = (i+0.5)*dr  # midpoint of segment
+        r_mid = (i+0.5)*dr  # midpoint of the small segment
         v = omega * r_mid
         dF = 0.5 * rho * Cd_rod * A_segment * (v**2)
         dT = r_mid * dF
         torque_half += dT
-    return 2.0 * torque_half  # double for both sides of rod
+    return 2.0 * torque_half  # Double for both sides of rod
 
 rod_torque_drag_final = rod_drag_torque(omega_final)
 
@@ -133,68 +88,85 @@ print("ROD AERODYNAMIC DRAG AT FINAL SPEED:")
 print(f"Rod drag torque at final omega: {rod_torque_drag_final:.6f} N*m")
 
 # ---------------------------------
-# 4. Torque and Power Requirements
+# 4. Torque & Power at Final Speed (snapshot)
 # ---------------------------------
-# Angular acceleration needed:
 alpha = omega_final / spin_up_time
-
-# In reality, torque must overcome inertia and drag that grows with speed.
-# The final torque needed at steady speed (no acceleration) is just drag torque.
-# But to accelerate, initially drag is negligible at low speed, grows with v².
-# To find a rough estimate of required power:
-#
-# At final speed, to just maintain speed (no acceleration): 
-#   T_maintain = rod_torque_drag_final  (since rocket and counterweight are points, negligible frontal area?)
-#   P_maintain = T_maintain * omega_final
-#
-# To accelerate to final speed in spin_up_time:
-#   T_inertia = I_total * alpha
-#
-# The total torque at final speed if we were still accelerating would be:
-#   T_final_accel = T_inertia + rod_torque_drag_final
-#
-# However, after reaching final speed, acceleration stops, so the motor only needs drag torque to maintain.
-# The maximum power output during acceleration will be somewhere before final speed, but let's 
-# at least print the final values.
-
 T_inertia = I_total * alpha
-T_final = T_inertia + rod_torque_drag_final
-P_final = T_final * omega_final  # if we were still accelerating at final speed
-
-# Also compute just maintenance power at final speed (no acceleration):
+T_final = T_inertia + rod_torque_drag_final  # if we were still accelerating at final speed
+P_final = T_final * omega_final
 P_maintain = rod_torque_drag_final * omega_final
 
 print("--------------------------------------------------")
-print("TORQUE AND POWER REQUIREMENTS:")
+print("TORQUE AND POWER REQUIREMENTS (Snapshot at Final Speed):")
 print(f"Spin-up time: {spin_up_time} s")
 print(f"Angular acceleration (alpha): {alpha:.6f} rad/s^2")
-print(f"Inertia torque (T_inertia) to accelerate: {T_inertia:.6f} N*m")
-print(f"Total torque at final speed if still accelerating: {T_final:.6f} N*m")
+print(f"Inertia torque (T_inertia) at final speed: {T_inertia:.6f} N*m")
+print(f"Total torque at final speed (if still accelerating): {T_final:.6f} N*m")
 print(f"Power if still accelerating at final speed: {P_final:.6f} W")
 print(f"Maintenance torque at final speed (just drag): {rod_torque_drag_final:.6f} N*m")
 print(f"Maintenance power at final speed (just drag): {P_maintain:.6f} W")
 
-# Note: Real scenario requires integrating over speed to find exact energy and average power. 
-# Here we provide a rough snapshot.
+# ---------------------------------
+# 5. *Total Energy* and *Average Power* Consumed During Spin-Up
+#    (Numeric integration over time, assuming constant alpha)
+# ---------------------------------
+
+dt = 0.5  # time step for integration (can be smaller for more accuracy)
+num_steps = int(spin_up_time / dt)
+energy_consumed = 0.0
+
+for i in range(num_steps+1):
+    t = i * dt
+    # Current angular velocity (assuming linear ramp-up from 0 to omega_final)
+    omega_t = alpha * t
+    # Current drag torque
+    T_drag_t = rod_drag_torque(omega_t)
+    # Inertial torque is constant if alpha is constant
+    T_inertia_t = I_total * alpha
+    # Total torque
+    T_total_t = T_inertia_t + T_drag_t
+    # Instantaneous power
+    P_t = T_total_t * omega_t
+    # Accumulate energy
+    energy_consumed += P_t * dt
+
+# Average power during spin-up:
+average_power_spinup = energy_consumed / spin_up_time
+
+# Compare with final rotational kinetic energy (just for reference):
+rot_kinetic_energy_final = 0.5 * I_total * (omega_final**2)
+
+energy_consumed_Wh = energy_consumed / 3600.0
+average_power_spinup = energy_consumed / spin_up_time
+
+# Compare with final rotational kinetic energy (just for reference):
+rot_kinetic_energy_final = 0.5 * I_total * (omega_final**2)
+rot_kinetic_energy_final_Wh = rot_kinetic_energy_final / 3600.0
+
+print("--------------------------------------------------")
+print("TOTAL ENERGY & AVERAGE POWER DURING SPIN-UP:")
+print(f"Total spin-up energy consumed: {energy_consumed:,.2f} J "
+      f"({energy_consumed_Wh:,.2f} Wh)")
+print(f"Average power during spin-up: {average_power_spinup:,.2f} W")
+print("")
+print(f"Final rotational kinetic energy (for comparison): "
+      f"{rot_kinetic_energy_final:,.2f} J "
+      f"({rot_kinetic_energy_final_Wh:,.2f} Wh)")
 
 # ---------------------------------
-# 5. Simulate Rocket Ascent After Release
+# 6. Simulate Rocket Ascent After Release
 # ---------------------------------
-# Released at 171 m/s vertically, with Cd_rocket=0.7 and mass=0.5 kg:
-#
-# dv/dt = -g - (D/m), D = 0.5 * rho * Cd_rocket * A_rocket * v²
-# Integrate until v ≤ 0.
 time_step = 0.01
-v = desired_tip_speed
+v = desired_tip_speed  # release speed (vertical)
 h = 0.0
 time_vals = []
 height_vals = []
 velocity_vals = []
 
 t = 0.0
-while v > 0: 
+while v > 0:
     D = 0.5 * rho * Cd_rocket * A_rocket * v**2
-    a = -g - (D/rocket_mass)
+    a = -g - (D / rocket_mass)
     v = v + a*time_step
     h = h + v*time_step
     time_vals.append(t)
@@ -209,7 +181,7 @@ print("ROCKET TRAJECTORY AFTER RELEASE:")
 print(f"Max height reached by rocket: {max_height:.3f} m")
 
 # ---------------------------------
-# 6. Plot the rocket trajectory
+# 7. Plot the rocket trajectory
 # ---------------------------------
 plt.figure(figsize=(10,6))
 plt.plot(time_vals, height_vals, label='Rocket Altitude')
@@ -219,6 +191,3 @@ plt.ylabel("Altitude (m)")
 plt.grid(True)
 plt.legend()
 plt.show()
-
-# Done.
-# ---------------------------------------------------------------------------------
